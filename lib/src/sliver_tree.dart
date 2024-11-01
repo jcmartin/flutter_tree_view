@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/src/rendering/sliver.dart';
 
 import 'tree_controller.dart';
 
@@ -116,6 +117,228 @@ class _SliverTreeState<T extends Object> extends State<SliverTree<T>> {
       controller: widget.controller,
       child: SliverList.builder(
         itemCount: _flatTree.length,
+        itemBuilder: (BuildContext context, int index) {
+          return widget.nodeBuilder(context, _flatTree[index]);
+        },
+      ),
+    );
+  }
+}
+
+/// A wrapper around [SliverFixedExtentList] that adds basic tree viewing capabilities.
+///
+/// Usage:
+/// ```dart
+/// @override
+/// Widget build(BuildContext context) {
+///   return CustomScrollView(
+///     slivers: [
+///       SliverTree<Node>(
+///         controller: treeController,
+///         itemExtent: itemExtent,
+///         nodeBuilder: (BuildContext context, TreeEntry<Node> entry) {
+///           ...
+///         },
+///       ),
+///     ],
+///   );
+/// }
+/// ```
+///
+/// See also:
+/// * [TreeView], which covers the [CustomScrollView] boilerplate.
+/// * [AnimatedTreeView], a [TreeView] that animates the expansion state changes
+///   of tree nodes.
+class SliverFixedExtentTree<T extends Object> extends StatefulWidget {
+  /// Creates a [SliverFixedExtentTree].
+  const SliverFixedExtentTree({
+    super.key,
+    required this.controller,
+    required this.nodeBuilder,
+    required this.itemExtent,
+  });
+
+  /// {@template flutter_fancy_tree_view.SliverFixedExtentTree.controller}
+  /// The object responsible for providing access to tree nodes and their states.
+  ///
+  /// This widget will listen to the notifications of this controller and
+  /// rebuild the internal flat represetantion of the tree to make sure the
+  /// presented tree view is always up to date.
+  /// {@endtemplate}
+  final TreeController<T> controller;
+
+  /// {@template flutter_fancy_tree_view.SliverFixedExtentTree.nodeBuilder}
+  /// Callback used to map tree nodes into widgets.
+  ///
+  /// The `TreeEntry<T> entry` parameter contains important information about
+  /// the current tree context of the particular [TreeEntry.node] that it holds,
+  /// like the index, level, expansion state, parent, etc.
+  /// {@endtemplate}
+  final TreeNodeBuilder<T> nodeBuilder;
+
+  /// {@template flutter_fancy_tree_view.SliverFixedExtentTree.itemExtent}
+  /// The extent the children are forced to have in the main axis.
+  /// {@endtemplate}
+  final double itemExtent;
+
+  @override
+  State<SliverFixedExtentTree<T>> createState() => _SliverFixedExtentTreeState<T>();
+}
+
+class _SliverFixedExtentTreeState<T extends Object> extends State<SliverFixedExtentTree<T>> {
+  List<TreeEntry<T>> _flatTree = const [];
+
+  void _updateFlatTree() {
+    final List<TreeEntry<T>> flatTree = [];
+    widget.controller.depthFirstTraversal(onTraverse: flatTree.add);
+    _flatTree = flatTree;
+  }
+
+  void _rebuild() => setState(_updateFlatTree);
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_rebuild);
+    _updateFlatTree();
+  }
+
+  @override
+  void didUpdateWidget(covariant SliverFixedExtentTree<T> oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_rebuild);
+      widget.controller.addListener(_rebuild);
+      _updateFlatTree();
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_rebuild);
+    _flatTree = const [];
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TreeViewScope<T>(
+      controller: widget.controller,
+      child: SliverFixedExtentList.builder(
+        itemCount: _flatTree.length,
+        itemExtent: widget.itemExtent,
+        itemBuilder: (BuildContext context, int index) {
+          return widget.nodeBuilder(context, _flatTree[index]);
+        },
+      ),
+    );
+  }
+}
+
+/// A wrapper around [SliverVariedExtentList] that adds basic tree viewing capabilities.
+///
+/// Usage:
+/// ```dart
+/// @override
+/// Widget build(BuildContext context) {
+///   return CustomScrollView(
+///     slivers: [
+///       SliverTree<Node>(
+///         controller: treeController,
+///         itemExtentBuilder: itemExtentBuilder,
+///         nodeBuilder: (BuildContext context, TreeEntry<Node> entry) {
+///           ...
+///         },
+///       ),
+///     ],
+///   );
+/// }
+/// ```
+///
+/// See also:
+/// * [TreeView], which covers the [CustomScrollView] boilerplate.
+/// * [AnimatedTreeView], a [TreeView] that animates the expansion state changes
+///   of tree nodes.
+class SliverVariedExtentTree<T extends Object> extends StatefulWidget {
+  /// Creates a [SliverVariedExtentTree].
+  const SliverVariedExtentTree({
+    super.key,
+    required this.controller,
+    required this.nodeBuilder,
+    required this.itemExtentBuilder,
+  });
+
+  /// {@template flutter_fancy_tree_view.SliverVariedExtentTree.controller}
+  /// The object responsible for providing access to tree nodes and their states.
+  ///
+  /// This widget will listen to the notifications of this controller and
+  /// rebuild the internal flat represetantion of the tree to make sure the
+  /// presented tree view is always up to date.
+  /// {@endtemplate}
+  final TreeController<T> controller;
+
+  /// {@template flutter_fancy_tree_view.SliverVariedExtentTree.nodeBuilder}
+  /// Callback used to map tree nodes into widgets.
+  ///
+  /// The `TreeEntry<T> entry` parameter contains important information about
+  /// the current tree context of the particular [TreeEntry.node] that it holds,
+  /// like the index, level, expansion state, parent, etc.
+  /// {@endtemplate}
+  final TreeNodeBuilder<T> nodeBuilder;
+
+  /// {@template flutter_fancy_tree_view.SliverVariedExtentTree.itemExtentBuilder}
+  /// The children extent builder.
+  ///
+  /// Should return null if asked to build an item extent with a greater index than exists.
+  /// {@endtemplate}
+  final ItemExtentBuilder itemExtentBuilder;
+
+  @override
+  State<SliverVariedExtentTree<T>> createState() => _SliverVariedExtentTreeState<T>();
+}
+
+class _SliverVariedExtentTreeState<T extends Object> extends State<SliverVariedExtentTree<T>> {
+  List<TreeEntry<T>> _flatTree = const [];
+
+  void _updateFlatTree() {
+    final List<TreeEntry<T>> flatTree = [];
+    widget.controller.depthFirstTraversal(onTraverse: flatTree.add);
+    _flatTree = flatTree;
+  }
+
+  void _rebuild() => setState(_updateFlatTree);
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_rebuild);
+    _updateFlatTree();
+  }
+
+  @override
+  void didUpdateWidget(covariant SliverVariedExtentTree<T> oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_rebuild);
+      widget.controller.addListener(_rebuild);
+      _updateFlatTree();
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_rebuild);
+    _flatTree = const [];
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TreeViewScope<T>(
+      controller: widget.controller,
+      child: SliverVariedExtentList.builder(
+        itemCount: _flatTree.length,
+        itemExtentBuilder: widget.itemExtentBuilder,
         itemBuilder: (BuildContext context, int index) {
           return widget.nodeBuilder(context, _flatTree[index]);
         },

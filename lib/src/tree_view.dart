@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/src/rendering/sliver.dart';
 
 import 'sliver_animated_tree.dart';
 import 'sliver_tree.dart';
@@ -72,6 +73,122 @@ class TreeView<T extends Object> extends BoxScrollView {
   }
 }
 
+/// A widget used to visualize tree hierarchies.
+///
+/// Usage:
+/// ```dart
+/// @override
+/// Widget build(BuildContext context) {
+///   return TreeFixedExtentView<Node>(
+///     treeController: treeController,
+///     itemExtent: itemExtent,
+///     nodeBuilder: (BuildContext context, TreeEntry<Node> entry) {
+///       ...
+///     },
+///   );
+/// }
+/// ```
+///
+/// See also:
+/// * [SliverFixedExtentTree], which is created internally by [TreeView]. It can be used
+///   to create more sophisticated scrolling experiences.
+class TreeFixedExtentView<T extends Object> extends BoxScrollView {
+  /// Creates a [TreeFixedExtentView].
+  const TreeFixedExtentView({
+    super.key,
+    required this.treeController,
+    required this.nodeBuilder,
+    required this.itemExtent,
+    super.padding,
+    super.controller,
+    super.primary,
+    super.physics,
+    super.shrinkWrap,
+    super.cacheExtent,
+    super.semanticChildCount,
+    super.dragStartBehavior,
+    super.keyboardDismissBehavior,
+    super.restorationId,
+    super.clipBehavior,
+  });
+
+  /// {@macro flutter_fancy_tree_view.SliverTree.controller}
+  final TreeController<T> treeController;
+
+  /// {@macro flutter_fancy_tree_view.SliverTree.nodeBuilder}
+  final TreeNodeBuilder<T> nodeBuilder;
+
+  /// {@macro flutter_fancy_tree_view.SliverTree.itemExtent}
+  final double itemExtent;
+
+  @override
+  Widget buildChildLayout(BuildContext context) {
+    return SliverFixedExtentTree<T>(
+      controller: treeController,
+      itemExtent: itemExtent,
+      nodeBuilder: nodeBuilder,
+    );
+  }
+}
+
+/// A widget used to visualize tree hierarchies.
+///
+/// Usage:
+/// ```dart
+/// @override
+/// Widget build(BuildContext context) {
+///   return TreeVariedExtentView<Node>(
+///     treeController: treeController,
+///     itemExtentBuilder: itemExtentBuilder,
+///     nodeBuilder: (BuildContext context, TreeEntry<Node> entry) {
+///       ...
+///     },
+///   );
+/// }
+/// ```
+///
+/// See also:
+/// * [SliverVariedExtentTree], which is created internally by [TreeView]. It can be used
+///   to create more sophisticated scrolling experiences.
+class TreeVariedExtentView<T extends Object> extends BoxScrollView {
+  /// Creates a [TreeVariedExtentView].
+  const TreeVariedExtentView({
+    super.key,
+    required this.treeController,
+    required this.nodeBuilder,
+    required this.itemExtentBuilder,
+    super.padding,
+    super.controller,
+    super.primary,
+    super.physics,
+    super.shrinkWrap,
+    super.cacheExtent,
+    super.semanticChildCount,
+    super.dragStartBehavior,
+    super.keyboardDismissBehavior,
+    super.restorationId,
+    super.clipBehavior,
+  });
+
+  /// {@macro flutter_fancy_tree_view.SliverTree.controller}
+  final TreeController<T> treeController;
+
+  /// {@macro flutter_fancy_tree_view.SliverTree.nodeBuilder}
+  final TreeNodeBuilder<T> nodeBuilder;
+
+  /// {@macro flutter_fancy_tree_view.SliverTree.itemExtentBuilder}
+  final ItemExtentBuilder itemExtentBuilder;
+
+  @override
+  Widget buildChildLayout(BuildContext context) {
+    return SliverVariedExtentTree<T>(
+      controller: treeController,
+      itemExtentBuilder: itemExtentBuilder,
+      nodeBuilder: nodeBuilder,
+    );
+  }
+}
+
 /// A [TreeView] that animates the expansion state changes of tree nodes.
 ///
 /// Usage:
@@ -109,6 +226,166 @@ class AnimatedTreeView<T extends Object> extends TreeView<T> {
     super.key,
     required super.treeController,
     required super.nodeBuilder,
+    this.transitionBuilder = defaultTreeTransitionBuilder,
+    this.duration = const Duration(milliseconds: 300),
+    this.curve = Curves.linear,
+    this.maxNodesToShowWhenAnimating = 50,
+    super.padding,
+    super.controller,
+    super.primary,
+    super.physics,
+    super.shrinkWrap,
+    super.cacheExtent,
+    super.semanticChildCount,
+    super.dragStartBehavior,
+    super.keyboardDismissBehavior,
+    super.restorationId,
+    super.clipBehavior,
+  });
+
+  /// {@macro flutter_fancy_tree_view.SliverAnimatedTree.transitionBuilder}
+  final TreeTransitionBuilder transitionBuilder;
+
+  /// {@macro flutter_fancy_tree_view.SliverAnimatedTree.duration}
+  final Duration duration;
+
+  /// {@macro flutter_fancy_tree_view.SliverAnimatedTree.curve}
+  final Curve curve;
+
+  /// {@macro flutter_fancy_tree_view.SliverAnimatedTree.maxNodesToShowWhenAnimating}
+  final int maxNodesToShowWhenAnimating;
+
+  @override
+  Widget buildChildLayout(BuildContext context) {
+    return SliverAnimatedTree<T>(
+      controller: treeController,
+      nodeBuilder: nodeBuilder,
+      transitionBuilder: transitionBuilder,
+      duration: duration,
+      curve: curve,
+      maxNodesToShowWhenAnimating: maxNodesToShowWhenAnimating,
+    );
+  }
+}
+
+/// A [TreeFixedExtentView] that animates the expansion state changes of tree nodes.
+///
+/// Usage:
+/// ```dart
+/// @override
+/// Widget build(BuildContext context) {
+///   return AnimatedTreeFixedExtentView<Node>(
+///     treeController: treeController,
+///     duration: const Duration(milliseconds: 300),
+///     curve: Curves.linear,
+///     maxNodesToShowWhenAnimating: 50,
+///     transitionBuilder: (BuildContext context, Widget child, Animation<double> animation) {
+///       return FadeTransition(
+///         opacity: animation,
+///         child: SizeTransition(
+///           sizeFactor: animation,
+///           child: child,
+///         ),
+///       );
+///     },
+///     nodeBuilder: (BuildContext context, TreeEntry<Node> entry) {
+///       ...
+///     },
+///   );
+/// }
+/// ```
+///
+/// See also:
+/// * [SliverAnimatedTree], which is created internally by [AnimatedTreeFixedExtentView].
+///   It can be used to create more sophisticated scrolling experiences.
+/// * [TreeFixedExtentView], a version of this widget that has no custom behaviors.
+class AnimatedTreeFixedExtentView<T extends Object> extends TreeFixedExtentView<T> {
+  /// Creates a [TreeFixedExtentView].
+  const AnimatedTreeFixedExtentView({
+    super.key,
+    required super.treeController,
+    required super.nodeBuilder,
+    required super.itemExtent,
+    this.transitionBuilder = defaultTreeTransitionBuilder,
+    this.duration = const Duration(milliseconds: 300),
+    this.curve = Curves.linear,
+    this.maxNodesToShowWhenAnimating = 50,
+    super.padding,
+    super.controller,
+    super.primary,
+    super.physics,
+    super.shrinkWrap,
+    super.cacheExtent,
+    super.semanticChildCount,
+    super.dragStartBehavior,
+    super.keyboardDismissBehavior,
+    super.restorationId,
+    super.clipBehavior,
+  });
+
+  /// {@macro flutter_fancy_tree_view.SliverAnimatedTree.transitionBuilder}
+  final TreeTransitionBuilder transitionBuilder;
+
+  /// {@macro flutter_fancy_tree_view.SliverAnimatedTree.duration}
+  final Duration duration;
+
+  /// {@macro flutter_fancy_tree_view.SliverAnimatedTree.curve}
+  final Curve curve;
+
+  /// {@macro flutter_fancy_tree_view.SliverAnimatedTree.maxNodesToShowWhenAnimating}
+  final int maxNodesToShowWhenAnimating;
+
+  @override
+  Widget buildChildLayout(BuildContext context) {
+    return SliverAnimatedTree<T>(
+      controller: treeController,
+      nodeBuilder: nodeBuilder,
+      transitionBuilder: transitionBuilder,
+      duration: duration,
+      curve: curve,
+      maxNodesToShowWhenAnimating: maxNodesToShowWhenAnimating,
+    );
+  }
+}
+
+/// A [TreeVariedExtentView] that animates the expansion state changes of tree nodes.
+///
+/// Usage:
+/// ```dart
+/// @override
+/// Widget build(BuildContext context) {
+///   return AnimatedTreeVariedExtentView<Node>(
+///     treeController: treeController,
+///     duration: const Duration(milliseconds: 300),
+///     curve: Curves.linear,
+///     maxNodesToShowWhenAnimating: 50,
+///     transitionBuilder: (BuildContext context, Widget child, Animation<double> animation) {
+///       return FadeTransition(
+///         opacity: animation,
+///         child: SizeTransition(
+///           sizeFactor: animation,
+///           child: child,
+///         ),
+///       );
+///     },
+///     nodeBuilder: (BuildContext context, TreeEntry<Node> entry) {
+///       ...
+///     },
+///   );
+/// }
+/// ```
+///
+/// See also:
+/// * [SliverAnimatedTree], which is created internally by [AnimatedTreeVariedExtentView].
+///   It can be used to create more sophisticated scrolling experiences.
+/// * [TreeVariedExtentView], a version of this widget that has no custom behaviors.
+class AnimatedTreeVariedExtentView<T extends Object> extends TreeVariedExtentView<T> {
+  /// Creates a [TreeVariedExtentView].
+  const AnimatedTreeVariedExtentView({
+    super.key,
+    required super.treeController,
+    required super.nodeBuilder,
+    required super.itemExtentBuilder,
     this.transitionBuilder = defaultTreeTransitionBuilder,
     this.duration = const Duration(milliseconds: 300),
     this.curve = Curves.linear,

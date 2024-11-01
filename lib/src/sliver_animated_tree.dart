@@ -275,6 +275,487 @@ class _SaltedTreeNodeKey<T extends Object> extends GlobalObjectKey {
   int get hashCode => Object.hash(node, state);
 }
 
+/// A wrapper around [SliverFixedExtentList] that adds tree viewing capabilities with
+/// support for automatic expand and collapse animations.
+///
+/// Usage:
+/// ```dart
+/// @override
+/// Widget build(BuildContext context) {
+///   return CustomScrollView(
+///     slivers: [
+///       SliverAnimatedTree<Node>(
+///         controller: treeController,
+///         duration: const Duration(milliseconds, 300),
+///         curve: Curves.linear,
+///         maxNodesToShowWhenAnimating: 50,
+///         nodeBuilder: (BuildContext context, TreeEntry<Node> entry) {
+///           ...
+///         },
+///       ),
+///     ],
+///   );
+/// }
+/// ```
+///
+/// This widget will listen to [controller] and rebuild the inner flat
+/// representation of the tree keeping a map of the expansion state of tree
+/// nodes to then check if the cached value is different from the current
+/// node expansion state when visiting that node during flattening and will
+/// mark it to be animated.
+/// When a node is marked to animate, its subtree won't be traversed during
+/// flattening to later on be rendered in the same list item of the subtree
+/// root's node widget. Once the animation completes, the node is removed
+/// from the set of animating nodes and the tree is flattened again so the
+/// animating subtree can go back to being one list item per node.
+///
+/// See also:
+/// * [AnimatedTreeView], which covers the [CustomScrollView] boilerplate.
+/// * [SliverTree], a tree sliver with no custom behaviors.
+class SliverAnimatedFixedExtentTree<T extends Object> extends SliverFixedExtentTree<T> {
+  /// Creates a [SliverAnimatedFixedExtentTree].
+  const SliverAnimatedFixedExtentTree({
+    super.key,
+    required super.controller,
+    required super.nodeBuilder,
+    required super.itemExtent,
+    this.transitionBuilder = defaultTreeTransitionBuilder,
+    this.duration = const Duration(milliseconds: 300),
+    this.curve = Curves.linear,
+    this.maxNodesToShowWhenAnimating = 50,
+  }) : assert(maxNodesToShowWhenAnimating > 0);
+
+  /// {@template flutter_fancy_tree_view.SliverAnimatedFixedExtentTree.transitionBuilder}
+  /// A widget builder used to apply a transition to the expansion state changes
+  /// of a node subtree when animations are enabled.
+  ///
+  /// See also:
+  ///
+  /// * [defaultTreeTransitionBuilder] which uses a [SizeTransition].
+  /// {@endtemplate}
+  final TreeTransitionBuilder transitionBuilder;
+
+  /// {@template flutter_fancy_tree_view.SliverAnimatedFixedExtentTree.duration}
+  /// The default duration to use when animating the expand/collapse operations.
+  ///
+  /// Provide a [duration] of `Duration.zero` to disable animations.
+  ///
+  /// Defaults to `Duration(milliseconds: 300)`.
+  /// {@endtemplate}
+  final Duration duration;
+
+  /// {@template flutter_fancy_tree_view.SliverAnimatedFixedExtentTree.curve}
+  /// The default curve to use when animating the expand/collapse operations.
+  ///
+  /// Defaults to `Curves.linear`.
+  /// {@endtemplate}
+  final Curve curve;
+
+  /// {@template flutter_fancy_tree_view.SliverAnimatedFixedExtentTree.maxNodesToShowWhenAnimating}
+  /// The amount of nodes that are going to be shown on an animating subtree.
+  ///
+  /// Must be greater than `0`.
+  ///
+  /// When animating the expand/collapse state changes, all descendant nodes
+  /// whose visibility will change are rendered along with the toggled node,
+  /// i.e. a [Column] is used, therefore rendering the entire subtree regardless
+  /// of being a "lazy" rendered view.
+  ///
+  /// This value can be used to limit how many nodes are actually rendered
+  /// during the animation, since there could be cases where not all widgets
+  /// are visible due to scroll offsets.
+  ///
+  /// Defaults to `50`.
+  /// {@endtemplate}
+  final int maxNodesToShowWhenAnimating;
+
+  @override
+  State<SliverAnimatedFixedExtentTree<T>> createState() => _SliverAnimatedFixedExtentTreeState<T>();
+}
+
+class _SliverAnimatedFixedExtentTreeState<T extends Object>
+    extends State<SliverAnimatedFixedExtentTree<T>> {
+  Map<T, bool> get _expansionStates => _expansionStatesCache ??= <T, bool>{};
+  Map<T, bool>? _expansionStatesCache;
+
+  List<TreeEntry<T>> _flatTree = const [];
+
+  void _updateFlatTree() {
+    final Map<T, bool> oldExpansionStates = Map<T, bool>.of(_expansionStates);
+
+    final Map<T, bool> currentExpansionStates = <T, bool>{};
+    final List<TreeEntry<T>> flatTree = <TreeEntry<T>>[];
+
+    final Visitor<TreeEntry<T>> onTraverse;
+
+    if (widget.duration == Duration.zero) {
+      onTraverse = (TreeEntry<T> entry) {
+        flatTree.add(entry);
+        currentExpansionStates[entry.node] = entry.isExpanded;
+      };
+    } else {
+      onTraverse = (TreeEntry<T> entry) {
+        flatTree.add(entry);
+        currentExpansionStates[entry.node] = entry.isExpanded;
+
+        final bool? previousState = oldExpansionStates[entry.node];
+        if (previousState != null && previousState != entry.isExpanded) {
+          _animatingNodes.add(entry.node);
+        }
+      };
+    }
+
+    widget.controller.depthFirstTraversal(
+      onTraverse: onTraverse,
+      descendCondition: (TreeEntry<T> entry) {
+        if (_animatingNodes.contains(entry.node)) {
+          // The descendants of a node that is animating are not included in
+          // the flattened tree since those nodes are going to be rendered in
+          // a single list item.
+          return false;
+        }
+        return entry.isExpanded;
+      },
+    );
+
+    _flatTree = flatTree;
+    _expansionStatesCache = currentExpansionStates;
+  }
+
+  void _rebuild() => setState(_updateFlatTree);
+
+  final Set<T> _animatingNodes = <T>{};
+
+  void _onAnimationComplete(T node) {
+    _animatingNodes.remove(node);
+    _rebuild();
+  }
+
+  List<TreeEntry<T>> _buildSubtree(TreeEntry<T> entry) {
+    final List<TreeEntry<T>> subtree = <TreeEntry<T>>[];
+    widget.controller.depthFirstTraversal(
+      rootEntry: entry,
+      onTraverse: subtree.add,
+    );
+    if (subtree.length > widget.maxNodesToShowWhenAnimating) {
+      return subtree.sublist(0, widget.maxNodesToShowWhenAnimating);
+    }
+    return subtree;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_rebuild);
+    _updateFlatTree();
+  }
+
+  @override
+  void didUpdateWidget(covariant SliverAnimatedFixedExtentTree<T> oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_rebuild);
+      widget.controller.addListener(_rebuild);
+      _updateFlatTree();
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_rebuild);
+    _animatingNodes.clear();
+    _flatTree = const [];
+    _expansionStatesCache = null;
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TreeViewScope<T>(
+      controller: widget.controller,
+      child: SliverFixedExtentList.builder(
+        itemCount: _flatTree.length,
+        itemExtent: widget.itemExtent,
+        itemBuilder: (BuildContext context, int index) {
+          final TreeEntry<T> entry = _flatTree[index];
+          return _TreeEntry<T>(
+            key: _SaltedFixedExtentTreeNodeKey<T>(entry.node, this),
+            entry: entry,
+            nodeBuilder: widget.nodeBuilder,
+            buildFlatSubtree: _buildSubtree,
+            transitionBuilder: widget.transitionBuilder,
+            onAnimationComplete: _onAnimationComplete,
+            curve: widget.curve,
+            duration: widget.duration,
+            showSubtree: _animatingNodes.contains(entry.node),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _SaltedFixedExtentTreeNodeKey<T extends Object> extends GlobalObjectKey {
+  const _SaltedFixedExtentTreeNodeKey(this.node, this.state) : super(node);
+
+  final T node;
+  final _SliverAnimatedFixedExtentTreeState<T> state;
+
+  @override
+  bool operator ==(Object other) {
+    if (other.runtimeType != runtimeType) {
+      return false;
+    }
+    return other is _SaltedFixedExtentTreeNodeKey<T> &&
+        other.node == node &&
+        other.state == state;
+  }
+
+  @override
+  int get hashCode => Object.hash(node, state);
+}
+
+/// A wrapper around [SliverVariedExtentList] that adds tree viewing capabilities with
+/// support for automatic expand and collapse animations.
+///
+/// Usage:
+/// ```dart
+/// @override
+/// Widget build(BuildContext context) {
+///   return CustomScrollView(
+///     slivers: [
+///       SliverAnimatedTree<Node>(
+///         controller: treeController,
+///         duration: const Duration(milliseconds, 300),
+///         curve: Curves.linear,
+///         maxNodesToShowWhenAnimating: 50,
+///         nodeBuilder: (BuildContext context, TreeEntry<Node> entry) {
+///           ...
+///         },
+///       ),
+///     ],
+///   );
+/// }
+/// ```
+///
+/// This widget will listen to [controller] and rebuild the inner flat
+/// representation of the tree keeping a map of the expansion state of tree
+/// nodes to then check if the cached value is different from the current
+/// node expansion state when visiting that node during flattening and will
+/// mark it to be animated.
+/// When a node is marked to animate, its subtree won't be traversed during
+/// flattening to later on be rendered in the same list item of the subtree
+/// root's node widget. Once the animation completes, the node is removed
+/// from the set of animating nodes and the tree is flattened again so the
+/// animating subtree can go back to being one list item per node.
+///
+/// See also:
+/// * [AnimatedTreeView], which covers the [CustomScrollView] boilerplate.
+/// * [SliverTree], a tree sliver with no custom behaviors.
+class SliverAnimatedVariedExtentTree<T extends Object> extends SliverVariedExtentTree<T> {
+  /// Creates a [SliverAnimatedVariedExtentTree].
+  const SliverAnimatedVariedExtentTree({
+    super.key,
+    required super.controller,
+    required super.nodeBuilder,
+    required super.itemExtentBuilder,
+    this.transitionBuilder = defaultTreeTransitionBuilder,
+    this.duration = const Duration(milliseconds: 300),
+    this.curve = Curves.linear,
+    this.maxNodesToShowWhenAnimating = 50,
+  }) : assert(maxNodesToShowWhenAnimating > 0);
+
+  /// {@template flutter_fancy_tree_view.SliverAnimatedVariedExtentTree.transitionBuilder}
+  /// A widget builder used to apply a transition to the expansion state changes
+  /// of a node subtree when animations are enabled.
+  ///
+  /// See also:
+  ///
+  /// * [defaultTreeTransitionBuilder] which uses a [SizeTransition].
+  /// {@endtemplate}
+  final TreeTransitionBuilder transitionBuilder;
+
+  /// {@template flutter_fancy_tree_view.SliverAnimatedVariedExtentTree.duration}
+  /// The default duration to use when animating the expand/collapse operations.
+  ///
+  /// Provide a [duration] of `Duration.zero` to disable animations.
+  ///
+  /// Defaults to `Duration(milliseconds: 300)`.
+  /// {@endtemplate}
+  final Duration duration;
+
+  /// {@template flutter_fancy_tree_view.SliverAnimatedVariedExtentTree.curve}
+  /// The default curve to use when animating the expand/collapse operations.
+  ///
+  /// Defaults to `Curves.linear`.
+  /// {@endtemplate}
+  final Curve curve;
+
+  /// {@template flutter_fancy_tree_view.SliverAnimatedVariedExtentTree.maxNodesToShowWhenAnimating}
+  /// The amount of nodes that are going to be shown on an animating subtree.
+  ///
+  /// Must be greater than `0`.
+  ///
+  /// When animating the expand/collapse state changes, all descendant nodes
+  /// whose visibility will change are rendered along with the toggled node,
+  /// i.e. a [Column] is used, therefore rendering the entire subtree regardless
+  /// of being a "lazy" rendered view.
+  ///
+  /// This value can be used to limit how many nodes are actually rendered
+  /// during the animation, since there could be cases where not all widgets
+  /// are visible due to scroll offsets.
+  ///
+  /// Defaults to `50`.
+  /// {@endtemplate}
+  final int maxNodesToShowWhenAnimating;
+
+  @override
+  State<SliverAnimatedVariedExtentTree<T>> createState() => _SliverAnimatedVariedExtentTreeState<T>();
+}
+
+class _SliverAnimatedVariedExtentTreeState<T extends Object>
+    extends State<SliverAnimatedVariedExtentTree<T>> {
+  Map<T, bool> get _expansionStates => _expansionStatesCache ??= <T, bool>{};
+  Map<T, bool>? _expansionStatesCache;
+
+  List<TreeEntry<T>> _flatTree = const [];
+
+  void _updateFlatTree() {
+    final Map<T, bool> oldExpansionStates = Map<T, bool>.of(_expansionStates);
+
+    final Map<T, bool> currentExpansionStates = <T, bool>{};
+    final List<TreeEntry<T>> flatTree = <TreeEntry<T>>[];
+
+    final Visitor<TreeEntry<T>> onTraverse;
+
+    if (widget.duration == Duration.zero) {
+      onTraverse = (TreeEntry<T> entry) {
+        flatTree.add(entry);
+        currentExpansionStates[entry.node] = entry.isExpanded;
+      };
+    } else {
+      onTraverse = (TreeEntry<T> entry) {
+        flatTree.add(entry);
+        currentExpansionStates[entry.node] = entry.isExpanded;
+
+        final bool? previousState = oldExpansionStates[entry.node];
+        if (previousState != null && previousState != entry.isExpanded) {
+          _animatingNodes.add(entry.node);
+        }
+      };
+    }
+
+    widget.controller.depthFirstTraversal(
+      onTraverse: onTraverse,
+      descendCondition: (TreeEntry<T> entry) {
+        if (_animatingNodes.contains(entry.node)) {
+          // The descendants of a node that is animating are not included in
+          // the flattened tree since those nodes are going to be rendered in
+          // a single list item.
+          return false;
+        }
+        return entry.isExpanded;
+      },
+    );
+
+    _flatTree = flatTree;
+    _expansionStatesCache = currentExpansionStates;
+  }
+
+  void _rebuild() => setState(_updateFlatTree);
+
+  final Set<T> _animatingNodes = <T>{};
+
+  void _onAnimationComplete(T node) {
+    _animatingNodes.remove(node);
+    _rebuild();
+  }
+
+  List<TreeEntry<T>> _buildSubtree(TreeEntry<T> entry) {
+    final List<TreeEntry<T>> subtree = <TreeEntry<T>>[];
+    widget.controller.depthFirstTraversal(
+      rootEntry: entry,
+      onTraverse: subtree.add,
+    );
+    if (subtree.length > widget.maxNodesToShowWhenAnimating) {
+      return subtree.sublist(0, widget.maxNodesToShowWhenAnimating);
+    }
+    return subtree;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_rebuild);
+    _updateFlatTree();
+  }
+
+  @override
+  void didUpdateWidget(covariant SliverAnimatedVariedExtentTree<T> oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_rebuild);
+      widget.controller.addListener(_rebuild);
+      _updateFlatTree();
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_rebuild);
+    _animatingNodes.clear();
+    _flatTree = const [];
+    _expansionStatesCache = null;
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TreeViewScope<T>(
+      controller: widget.controller,
+      child: SliverVariedExtentList.builder(
+        itemCount: _flatTree.length,
+        itemExtentBuilder: widget.itemExtentBuilder,
+        itemBuilder: (BuildContext context, int index) {
+          final TreeEntry<T> entry = _flatTree[index];
+          return _TreeEntry<T>(
+            key: _SaltedVariedExtentTreeNodeKey<T>(entry.node, this),
+            entry: entry,
+            nodeBuilder: widget.nodeBuilder,
+            buildFlatSubtree: _buildSubtree,
+            transitionBuilder: widget.transitionBuilder,
+            onAnimationComplete: _onAnimationComplete,
+            curve: widget.curve,
+            duration: widget.duration,
+            showSubtree: _animatingNodes.contains(entry.node),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _SaltedVariedExtentTreeNodeKey<T extends Object> extends GlobalObjectKey {
+  const _SaltedVariedExtentTreeNodeKey(this.node, this.state) : super(node);
+
+  final T node;
+  final _SliverAnimatedVariedExtentTreeState<T> state;
+
+  @override
+  bool operator ==(Object other) {
+    if (other.runtimeType != runtimeType) {
+      return false;
+    }
+    return other is _SaltedVariedExtentTreeNodeKey<T> &&
+        other.node == node &&
+        other.state == state;
+  }
+
+  @override
+  int get hashCode => Object.hash(node, state);
+}
+
+
 typedef _FlatSubtreeBuilder<T extends Object> = List<TreeEntry<T>> Function(
   TreeEntry<T> virtualRoot,
 );
